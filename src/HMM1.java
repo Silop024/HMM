@@ -1,7 +1,7 @@
 import java.util.Scanner;
 import java.util.stream.Stream;
 
-public class Main
+public class HMM1
 {
     public static void main(String[] args)
     {
@@ -15,58 +15,36 @@ public class Main
 
         int[] observationSeq = stringToVector(in.nextLine()); // Observation sequence
 
-        // Initialize delta
+        in.close();
+
+        // Initialize alpha
         int Tr = observationSeq.length;
         int Nc = transitionMatrix.length;
 
-        double[][] delta = new double[Tr][Nc];
-        int[][] deltaIndices = new int[Tr][Nc];
+        double[][] alpha = new double[Tr][Nc];
 
         for (int i = 0; i < Nc; i++) {
-            delta[0][i] = initialProbMatrix[0][i] * emissionMatrix[i][observationSeq[0]];
+            alpha[0][i] = initialProbMatrix[0][i] * emissionMatrix[i][observationSeq[0]];
         }
 
-        // Compute rest of delta
+        // Compute rest of alpha
         for (int t = 1; t < Tr; t++) {
             for (int i = 0; i < Nc; i++) {
-                double max = -1;
-                int max_index = -1;
+                double sum = 0;
 
                 for (int j = 0; j < Nc; j++) {
-                    double tmp = delta[t - 1][j] * transitionMatrix[j][i] * emissionMatrix[i][observationSeq[t]];
-
-                    if (tmp > max) {
-                        max = tmp;
-                        max_index = j;
-                    }
+                    sum += alpha[t - 1][j] * transitionMatrix[j][i];
                 }
-                delta[t][i] = max;
-                deltaIndices[t][i] = max_index;
+                alpha[t][i] = sum * emissionMatrix[i][observationSeq[t]];
             }
         }
 
-        int[] answer = new int[Tr];
-
-        double max = -1;
-        for (int j = 0; j < Nc; j++) {
-            double curr = delta[Tr - 1][j];
-
-            if (curr > max) {
-                max = curr;
-                answer[Tr - 1] = j;
-            }
+        // Compute the probability of the given sequence as a single scalar
+        double answer = 0;
+        for (int i = 0; i < Nc; i++) {
+            answer += alpha[Tr - 1][i];
         }
-
-        for (int t = Tr - 2; t >= 0; t--) {
-            answer[t] = deltaIndices[t + 1][answer[t + 1]];
-        }
-
-        StringBuilder sb = new StringBuilder();
-        for (int val : answer) {
-            sb.append(val);
-            sb.append(' ');
-        }
-        System.out.println(sb);
+        System.out.println(answer);
     }
 
     public static double[][] stringToMatrix(String str)
@@ -89,7 +67,8 @@ public class Main
         return matrix;
     }
 
-    public static int[] stringToVector(String str) {
+    public static int[] stringToVector(String str)
+    {
         str = str.substring(2); // Skip length definition at beginning of line
 
         return Stream.of(str.split(" ")) // Split line into individual number strings
