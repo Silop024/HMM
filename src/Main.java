@@ -1,63 +1,81 @@
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.List;
+import java.util.Scanner;
 import java.util.stream.Stream;
 
 public class Main
 {
     public static void main(String[] args)
     {
-        List<double[]> matricesData = parseInputFile(args[0]);
+        Scanner in = new Scanner(System.in);
 
+        // Parse data
         // [row][col]
-        double[][] transitionMatrix = arrayToMatrix(matricesData.get(0)); // Transition probability matrix
-        double[][] emissionMatrix = arrayToMatrix(matricesData.get(1)); // Observation probability matrix
-        double[][] stateProbDistMatrix = arrayToMatrix(matricesData.get(2)); // Initial probability vector
+        double[][] transitionMatrix = stringToMatrix(in.nextLine()); // Transition probability matrix
+        double[][] emissionMatrix = stringToMatrix(in.nextLine()); // Observation probability matrix
+        double[][] initialProbMatrix = stringToMatrix(in.nextLine()); // Initial probability vector
 
-        printMatrix(transitionMatrix, "Transition matrix");
-        printMatrix(emissionMatrix, "Emission matrix");
-        printMatrix(stateProbDistMatrix, "Initial state probability distribution matrix");
+        int[] observationSeq = stringToVector(in.nextLine()); // Observation sequence
 
-        int nrOfStates = emissionMatrix.length;
-        int nrOfEvents = emissionMatrix[0].length;
+        // Initialize delta
+        int Tr = observationSeq.length;
+        int Nc = transitionMatrix.length;
 
-        double p01isF1 = 0;
-        for (int i = 0; i < stateProbDistMatrix[0].length; i++) {
-            p01isF1 += emissionMatrix[i][0] * stateProbDistMatrix[0][i];
+        double[][] delta = new double[Tr][Nc];
+        int[][] deltaIndices = new int[Tr][Nc];
+
+        for (int i = 0; i < Nc; i++) {
+            delta[0][i] = initialProbMatrix[0][i] * emissionMatrix[i][observationSeq[0]];
         }
-        System.out.println(p01isF1);
 
-        double[][] x2 = multiplyMatrices(stateProbDistMatrix, transitionMatrix);
-        printMatrix(x2, "X2");
+        // Compute rest of delta
+        for (int t = 1; t < Tr; t++) {
+            for (int i = 0; i < Nc; i++) {
+                double max = -1;
+                int max_index = -1;
 
-        double pO2isF2 = 0;
-        for (int i = 0; i < x2[0].length; i++) {
-            pO2isF2 += emissionMatrix[i][1] * x2[0][i];
+                for (int j = 0; j < Nc; j++) {
+                    double tmp = delta[t - 1][j] * transitionMatrix[j][i] * emissionMatrix[i][observationSeq[t]];
+
+                    if (tmp > max) {
+                        max = tmp;
+                        max_index = j;
+                    }
+                }
+                delta[t][i] = max;
+                deltaIndices[t][i] = max_index;
+            }
         }
-        System.out.println(pO2isF2);
 
-        double[][] x3 = multiplyMatrices(x2, transitionMatrix);
+        int[] answer = new int[Tr];
 
-        printMatrix(x3, "X3");
+        double max = -1;
+        for (int j = 0; j < Nc; j++) {
+            double curr = delta[Tr - 1][j];
+
+            if (curr > max) {
+                max = curr;
+                answer[Tr - 1] = j;
+            }
+        }
+
+        for (int t = Tr - 2; t >= 0; t--) {
+            answer[t] = deltaIndices[t + 1][answer[t + 1]];
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (int val : answer) {
+            sb.append(val);
+            sb.append(' ');
+        }
+        System.out.println(sb);
     }
 
-    public static List<double[]> parseInputFile(String file)
+    public static double[][] stringToMatrix(String str)
     {
-        try {
-            List<String> matrices = Files.readAllLines(Path.of(file));
-            return matrices.stream()
-                    .map(str -> Stream.of(str.split(" "))
-                            .mapToDouble(Double::parseDouble)
-                            .toArray())
-                    .toList();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
+        double[] array = Stream.of(str.split(" ")) // Split line into individual number strings
+                .mapToDouble(Double::parseDouble) // Parse strings to doubles
+                .toArray(); // Save as array
 
-    public static double[][] arrayToMatrix(double[] array)
-    {
+        // Nr of rows defined as first number in string, column as second
         int rows = (int) array[0];
         int cols = (int) array[1];
 
@@ -65,58 +83,17 @@ public class Main
 
         for (int i = 0; i < rows; i++) {
             for (int j = 0; j < cols; j++) {
-                matrix[i][j] = array[(i * cols) + j + 2]; // +2 to skip row/col definitions
+                matrix[i][j] = array[(i * cols) + j + 2]; // +2 to skip row/col definitions at beginning of line
             }
         }
-
         return matrix;
     }
 
-    public static double[][] multiplyMatrices(double[][] mA, double[][] mB)
-    {
-        int colsA = mA[0].length;
-        int rowsA = mA.length;
+    public static int[] stringToVector(String str) {
+        str = str.substring(2); // Skip length definition at beginning of line
 
-        int colsB = mB[0].length;
-        int rowsB = mB.length;
-
-        if (colsA != rowsB) {
-            System.out.printf("Cannot multiply a %d x %d matrix with a %d x %d matrix",
-                    rowsA, colsA, rowsB, colsB);
-            System.exit(1);
-        }
-
-        double[][] res = new double[rowsA][colsB];
-
-        for (int i = 0; i < rowsA; i++) {
-            for (int j = 0; j < colsB; j++) {
-                double sum = 0;
-                for (int k = 0; k < colsA; k++) {
-                    sum += mA[i][k] * mB[k][j];
-                }
-                res[i][j] = sum;
-            }
-        }
-        return res;
-    }
-
-    public static void printMatrix(double[][] matrix, String name)
-    {
-        StringBuilder sb = new StringBuilder(name);
-        sb.append('\n');
-        sb.append(matrix.length); // Rows
-        sb.append(" x ");
-        sb.append(matrix[0].length); // Cols
-        sb.append(" matrix\n");
-
-        for (double[] row : matrix) {
-            sb.append("| ");
-            for (double col : row) {
-                sb.append(String.format("%.2f", col));
-                sb.append(' ');
-            }
-            sb.append("|\n");
-        }
-        System.out.println(sb);
+        return Stream.of(str.split(" ")) // Split line into individual number strings
+                .mapToInt(Integer::parseInt) // Parse strings to integers
+                .toArray(); // Return as array
     }
 }
