@@ -95,9 +95,8 @@ public class HMM2
 
     public static int[] stringToVector(String str)
     {
-        str = str.substring(2); // Skip length definition at beginning of line
-
         return Stream.of(str.split(" ")) // Split line into individual number strings
+                .skip(1) // Skip length definition at beginning of line
                 .mapToInt(Integer::parseInt) // Parse strings to integers
                 .toArray(); // Return as array
     }
