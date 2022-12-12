@@ -13,19 +13,19 @@ public class HMM2
         double[][] emissionMatrix = stringToMatrix(in.nextLine()); // Observation probability matrix
         double[][] initialProbMatrix = stringToMatrix(in.nextLine()); // Initial probability vector
 
-        int[] observationSeq = stringToVector(in.nextLine()); // Observation sequence
+        int[] emissionSequence = stringToVector(in.nextLine()); // Observation sequence
 
         in.close();
 
         // Initialize delta
-        int Tr = observationSeq.length;
+        int Tr = emissionSequence.length;
         int Nc = transitionMatrix.length;
 
         double[][] delta = new double[Tr][Nc];
         int[][] deltaIndices = new int[Tr][Nc];
 
         for (int i = 0; i < Nc; i++) {
-            delta[0][i] = initialProbMatrix[0][i] * emissionMatrix[i][observationSeq[0]];
+            delta[0][i] = initialProbMatrix[0][i] * emissionMatrix[i][emissionSequence[0]];
         }
 
         // Compute rest of delta
@@ -35,7 +35,7 @@ public class HMM2
                 int max_index = -1;
 
                 for (int j = 0; j < Nc; j++) {
-                    double tmp = delta[t - 1][j] * transitionMatrix[j][i] * emissionMatrix[i][observationSeq[t]];
+                    double tmp = delta[t - 1][j] * transitionMatrix[j][i] * emissionMatrix[i][emissionSequence[t]];
 
                     if (tmp > max) {
                         max = tmp;

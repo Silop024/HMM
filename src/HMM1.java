@@ -13,18 +13,18 @@ public class HMM1
         double[][] emissionMatrix = stringToMatrix(in.nextLine()); // Observation probability matrix
         double[][] initialProbMatrix = stringToMatrix(in.nextLine()); // Initial probability vector
 
-        int[] observationSeq = stringToVector(in.nextLine()); // Observation sequence
+        int[] emissionSequence = stringToVector(in.nextLine()); // Observation sequence
 
         in.close();
 
         // Initialize alpha
-        int Tr = observationSeq.length;
+        int Tr = emissionSequence.length;
         int Nc = transitionMatrix.length;
 
         double[][] alpha = new double[Tr][Nc];
 
         for (int i = 0; i < Nc; i++) {
-            alpha[0][i] = initialProbMatrix[0][i] * emissionMatrix[i][observationSeq[0]];
+            alpha[0][i] = initialProbMatrix[0][i] * emissionMatrix[i][emissionSequence[0]];
         }
 
         // Compute rest of alpha
@@ -35,7 +35,7 @@ public class HMM1
                 for (int j = 0; j < Nc; j++) {
                     sum += alpha[t - 1][j] * transitionMatrix[j][i];
                 }
-                alpha[t][i] = sum * emissionMatrix[i][observationSeq[t]];
+                alpha[t][i] = sum * emissionMatrix[i][emissionSequence[t]];
             }
         }
 
