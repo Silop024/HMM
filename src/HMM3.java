@@ -22,156 +22,164 @@ public class HMM3
          *   3. Re-estimate ¸ lambda=(A,B,pi)
          *   4. Repeat from 2. until convergence
          */
-        for (int loop = 0; loop < 2; loop++) {
-            baumWelch(transitionMatrix, emissionMatrix, initialProbMatrix, emissionSequence);
-        }
-        printAnswer(transitionMatrix);
-        printAnswer(emissionMatrix);
+        baumWelch(transitionMatrix, emissionMatrix, initialProbMatrix, emissionSequence);
     }
 
-    public static double[][] alphaPass(double[][] transitionMatrix, double[][] emissionMatrix,
-                                       double[][] initialProbMatrix, int[] observationSeq)
+    public static void alphaPass(double[][] alpha, double[][] transitionMatrix, double[][] emissionMatrix,
+                                 double[][] initialProbMatrix, int[] emissionSequence,
+                                 double[] c, int Tr, int Nc)
     {
-        // Initialize alpha
-        int Tr = observationSeq.length;
-        int Nc = transitionMatrix.length;
-
-        double[][] alpha = new double[Tr][Nc];
-
+        // Compute alpha[0][i]
+        c[0] = 0;
         for (int i = 0; i < Nc; i++) {
-            alpha[0][i] = initialProbMatrix[0][i] * emissionMatrix[i][observationSeq[0]];
+            alpha[0][i] = initialProbMatrix[0][i] * emissionMatrix[i][emissionSequence[0]];
+            c[0] += alpha[0][i];
         }
 
-        // Compute rest of alpha
-        for (int t = 1; t < Tr; t++) {
-            for (int i = 0; i < Nc; i++) {
-                double sum = 0;
+        // Scale the alpha[0][i]
+        c[0] = 1 / c[0];
+        for (int i = 0; i < Nc; i++) {
+            alpha[0][i] *= c[0];
+        }
 
+        // Compute a[t][i]
+        for (int t = 1; t < Tr; t++) {
+            c[t] = 0;
+            for (int i = 0; i < Nc; i++) {
+                alpha[t][i] = 0;
                 for (int j = 0; j < Nc; j++) {
-                    sum += alpha[t - 1][j] * transitionMatrix[j][i];
+                    alpha[t][i] += alpha[t - 1][j] * transitionMatrix[j][i];
                 }
-                alpha[t][i] = sum * emissionMatrix[i][observationSeq[t]];
+                alpha[t][i] *= emissionMatrix[i][emissionSequence[t]];
+                c[t] += alpha[t][i];
+            }
+            // Scale alpha[t][i]
+            c[t] = 1 / c[t];
+            for (int i = 0; i < Nc; i++) {
+                alpha[t][i] *= c[t];
             }
         }
-        return alpha;
     }
 
-    public static double[][] betaPass(double[][] transitionMatrix, double[][] emissionMatrix, int[] emissionSequence)
+    public static void betaPass(double[][] beta, double[][] transitionMatrix, double[][] emissionMatrix,
+                                int[] emissionSequence, double[] c,
+                                int Tr, int Nc)
     {
-        // Initialize beta
-        //int Tr = emissionSequence.length;
-        int Tr = transitionMatrix.length;
-        int Nc = transitionMatrix.length;
-
-        double[][] beta = new double[Tr][Nc];
-
+        // Let beta[Tr - 1][i] = 1, scaled by c[Tr - 1]
         for (int i = 0; i < Nc; i++) {
-            beta[Tr - 1][i] = 1;
+            beta[Tr - 1][i] = c[Tr - 1];
         }
 
-        // Compute rest of beta
+        // Beta-pass
         for (int t = Tr - 2; t >= 0; t--) {
             for (int i = 0; i < Nc; i++) {
-                double sum = 0;
-
+                beta[t][i] = 0;
                 for (int j = 0; j < Nc; j++) {
-                    sum += beta[t + 1][j] * emissionMatrix[i][emissionSequence[t]] * transitionMatrix[j][i];
+                    beta[t][i] += transitionMatrix[i][j] * emissionMatrix[j][emissionSequence[t + 1]] * beta[t + 1][j];
                 }
-                beta[t][i] = sum;
+                beta[t][i] *= c[t];
             }
         }
-
-        return beta;
     }
 
-    public static double[][][] diGamma(double[][] alpha, double[][] beta,
-                                       double[][] transitionMatrix, double[][] emissionMatrix,
-                                       int[] emissionSequence)
+    public static void diGamma(double[][] alpha, double[][] beta, double[][] gamma, double[][][] diGamma,
+                               double[][] transitionMatrix, double[][] emissionMatrix,
+                               int[] emissionSequence, int Tr, int Nc)
     {
-        //int Tr = emissionSequence.length;
-        int Tr = transitionMatrix.length;
-        int Nc = transitionMatrix.length;
 
-        double[][][] gamma = new double[Tr][Nc][Nc];
-
+        // No need to normalize gamma[t][i][j] since using scaled alpha and beta
         for (int t = 0; t < Tr - 1; t++) {
             for (int i = 0; i < Nc; i++) {
+                gamma[t][i] = 0;
                 for (int j = 0; j < Nc; j++) {
-                    double numerator = alpha[t][i] * transitionMatrix[i][j] * emissionMatrix[j][emissionSequence[t + 1]] * beta[t + 1][j];
+                    diGamma[t][i][j] = alpha[t][i] * transitionMatrix[i][j] * emissionMatrix[j][emissionSequence[t + 1]] * beta[t + 1][j];
 
-                    double denominator = 0;
-
-                    for (int k = 0; k < Nc; k++) {
-                        denominator += alpha[Tr - 1][k];
-                    }
-                    gamma[t][i][j] = numerator / denominator;
+                    gamma[t][i] += diGamma[t][i][j];
                 }
             }
         }
-        return gamma;
+        // Special case for gamma[Tr - 1][i] (as above, no need to normalize)
+        System.arraycopy(alpha[Tr - 1], 0, gamma[Tr - 1], 0, Nc);
     }
 
-    public static double[][] gamma(double[][][] diGamma)
+    public static void baumWelch(double[][] transitionMatrix, double[][] emissionMatrix,
+                                 double[][] initialProbMatrix, int[] emissionSequence)
     {
-        int Tr = diGamma.length;
-        int N = diGamma[0].length;
+        int iters = 0;
+        int maxIters = 100;
 
-        double[][] gamma = new double[Tr][N];
+        double oldLogProb = Double.NEGATIVE_INFINITY;
 
-        for (int t = 0; t < Tr; t++) {
-            for (int i = 0; i < N; i++) {
-                double sum = 0;
+        int Tr = emissionSequence.length;
+        int Nc = transitionMatrix.length;
 
-                for (int j = 0; j < N; j++) {
-                    sum += diGamma[t][i][j];
+        double[] c = new double[emissionSequence.length];
+        double[][] alpha = new double[Tr][Nc];
+        double[][] beta = new double[Tr][Nc];
+        double[][] gamma = new double[Tr][Nc];
+        double[][][] diGamma = new double[Tr][Nc][Nc];
+
+        while (true) {
+            alphaPass(alpha, transitionMatrix, emissionMatrix, initialProbMatrix, emissionSequence, c, Tr, Nc);
+            betaPass(beta, transitionMatrix, emissionMatrix, emissionSequence, c, Tr, Nc);
+            diGamma(alpha, beta, gamma, diGamma, transitionMatrix, emissionMatrix, emissionSequence, Tr, Nc);
+
+            // Re-estimate probability matrix
+            System.arraycopy(gamma[0], 0, initialProbMatrix[0], 0, Nc);
+
+            double denominator;
+            double numerator;
+            // Re-estimate transition matrix
+            for (int i = 0; i < Nc; i++) {
+                denominator = 0;
+                for (int t = 0; t < Tr - 1; t++) {
+                    denominator += gamma[t][i];
                 }
-                gamma[t][i] = sum;
-            }
-        }
-        return gamma;
-    }
+                for (int j = 0; j < Nc; j++) {
+                    numerator = 0;
 
-    public static void baumWelch(double[][] transitionMatrix, double[][] emissionMatrix, double[][] initialProbMatrix, int[] emissionSequence)
-    {
-        double[][] alpha = alphaPass(transitionMatrix, emissionMatrix, initialProbMatrix, emissionSequence);
-        double[][] beta = betaPass(transitionMatrix, emissionMatrix, emissionSequence);
-        double[][][] diGamma = diGamma(alpha, beta, transitionMatrix, emissionMatrix, emissionSequence);
-        double[][] gamma = gamma(diGamma);
-
-        int N = transitionMatrix.length;
-        for (int i = 0; i < N; i++) {
-            for (int j = 0; j < N; j++) {
-                double sumDiGamma = 0;
-                double sumGamma = 0;
-
-                for (int t = 0; t < gamma.length; t++) {
-                    sumDiGamma += diGamma[t][i][j];
-                    sumGamma += gamma[t][i];
-                }
-                transitionMatrix[i][j] = sumDiGamma / sumGamma;
-            }
-        }
-
-        int K = emissionMatrix[0].length;
-        for (int j = 0; j < N; j++) {
-            for (int k = 0; k < K; k++) {
-                double nominator = 0;
-                double denominator = 0;
-
-                for (int t = 0; t < gamma.length; t++) {
-                    int idk = 0;
-                    if (emissionSequence[t] == k) {
-                        idk = 1;
+                    for (int t = 0; t < Tr - 1; t++) {
+                        numerator += diGamma[t][i][j];
                     }
-                    nominator += idk * gamma[t][j];
-
-                    denominator += gamma[t][j];
+                    transitionMatrix[i][j] = numerator / denominator;
                 }
-                emissionMatrix[j][k] = nominator / denominator;
+            }
+
+            // Re-estimate emission matrix
+            for (int i = 0; i < Nc; i++) {
+                denominator = 0;
+                for (int t = 0; t < Tr; t++) {
+                    denominator += gamma[t][i];
+                }
+                for (int j = 0; j < emissionMatrix[0].length; j++) {
+                    numerator = 0;
+
+                    for (int t = 0; t < Tr; t++) {
+                        if (emissionSequence[t] == j) {
+                            numerator += gamma[t][i];
+                        }
+                    }
+                    emissionMatrix[i][j] = numerator / denominator;
+                }
+            }
+
+            // Compute log[P(O|lambda]]
+            double logProb = 0;
+            for (int i = 0; i < Tr; i++) {
+                logProb += Math.log(c[i]);
+            }
+            logProb = -logProb;
+
+            iters++;
+
+            if (iters < maxIters && logProb > oldLogProb) {
+                oldLogProb = logProb;
+            } else {
+                printAnswer(transitionMatrix);
+                printAnswer(emissionMatrix);
+                System.exit(0);
             }
         }
-
-        System.arraycopy(gamma[0], 0, initialProbMatrix[0], 0, N);
     }
 
     public static double[][] stringToMatrix(String str)
